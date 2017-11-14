@@ -160,7 +160,7 @@ def RR_variable(processes, quantum):
 # Result should be a list of Process instances, representing a Gantt chart
 def plot(result):
 	#Unit width calculated from longest PID
-	unit_width = max(len(str(p.PID)) for p in result) + 3
+	unit_width = max([len(str(p.PID)) for p in result if p] + [4]) + 3
 	widths = []
 	activeprocess = result[0]
 	processbegin = 0
@@ -179,7 +179,10 @@ def plot(result):
 	print("\n|", end="")
 	for p, begin, end in widths:
 		width = unit_width*(end-begin)
-		print(("{: ^" + str(width) + "}").format("P"+str(p.PID))+"|", end="")
+		if p is not None:
+			print(("{: ^" + str(width) + "}").format("P"+str(p.PID))+"|", end="")
+		else:
+			print(("{: ^" + str(width) + "}").format("IDLE")+"|", end="")
 
 	print("\n+", end="")
 	for p, begin, end in widths:
@@ -190,18 +193,22 @@ def plot(result):
 	for p, begin, end in widths:
 		width = unit_width*(end-begin)
 		print(("{: <" + str(width+1) + "}").format(begin), end="")
-	print(widths[-1][-1])
+	print(widths[-1][-1]+1)
 
 def analyze(result):
 	processes = set(result)
 	end_times = {p: [idx for idx, p2 in enumerate(result) if p is p2][-1] for p in processes}
-	turnaround_times = {p: end_times[p] - p.arrivaltime for p in processes}
-	wait_times = {p: len([p2 for p2 in result[p.arrivaltime: end_times[p]+1] if p2 is not p]) for p in processes}
-
-	j = json.dumps({
+	turnaround_times = {p: end_times[p] - p.arrivaltime + 1 for p in processes if p}
+	wait_times = {p: len([p2 for p2 in result[p.arrivaltime: end_times[p]+1] if p2 is not p]) for p in processes if p}
+	
+	j = {
 		"turnaround_times": {"P%d"%p.PID: v for p, v in turnaround_times.items()},
 		"wait_times": {"P%d"%p.PID: v for p, v in wait_times.items()},
-		}, indent=4)
+	}
+	j["turnaround_times"]["avg"] = sum(j["turnaround_times"].values()) / len(j["turnaround_times"])
+	j["wait_times"]["avg"] = sum(j["wait_times"].values()) / len(j["wait_times"])
+
+	j = json.dumps(j, indent=4)
 	return j
 
 def parseCSV(fname):
@@ -222,8 +229,8 @@ def main():
 	parser.add_argument("--SRT", action='store_true', help="Print an analysis based on the SRT algorithm")
 	parser.add_argument("--SJF", action='store_true', help="Print an analysis based on the SJF algorithm")
 	parser.add_argument("--priority", action='store_true', help="Print an analysis based on the priority algorithm")
-	parser.add_argument("--fRR", action='store_true', help="Print an analysis based on the fixed RR algorithm")
-	parser.add_argument("--vRR", action='store_true', help="Print an analysis based on the variable RR algorithm")
+	parser.add_argument("--fRR", type=int, default=0, help="Print an analysis based on the fixed RR algorithm")
+	parser.add_argument("--vRR", type=int, default=0, help="Print an analysis based on the variable RR algorithm")
 	args = parser.parse_args()
 
 	processes = parseCSV(args.input)
@@ -248,13 +255,13 @@ def main():
 		print("\nPriority:")
 		plot(result)
 		print(analyze(result))
-	if args.fRR:
-		result = list(RR_fixed(processes))
+	if args.fRR > 0:
+		result = list(RR_fixed(processes, args.fRR))
 		print("\nRound-robin fixed:")
 		plot(result)
 		print(analyze(result))
-	if args.vRR:
-		result = list(RR_variable(processes))
+	if args.vRR > 0:
+		result = list(RR_variable(processes, args.vRR))
 		print("\nRound-robin variable:")
 		plot(result)
 		print(analyze(result))
